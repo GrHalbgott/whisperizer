@@ -1,0 +1,12 @@
+cache/**
+__pycache__/
+outputs/
+.env
+.venv
+venv
+*.pkl
+
+.pytest_cache
+**/lightning_logs
+**/ohsome_log
+.vscode/

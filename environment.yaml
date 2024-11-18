@@ -1,0 +1,6 @@
+name: whisper
+dependencies:
+  - python=3.11.4
+  - pip=24.3.1
+  - pip:
+      - openai-whisper==20240930
