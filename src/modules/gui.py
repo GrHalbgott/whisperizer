@@ -52,7 +52,7 @@ class WhisperTranscriberApp(QWidget):
         self.file_path.textChanged.connect(self.check_fields)
         file_layout.addWidget(self.file_path)
         self.file_button = QPushButton('Browse')
-        self.file_button.clicked.connect(self.select_files)
+        self.file_button.clicked.connect(self.file_browser)
         file_layout.addWidget(self.file_button)
         layout.addLayout(file_layout)
 
@@ -84,8 +84,6 @@ class WhisperTranscriberApp(QWidget):
         self.model_dropdown.setCurrentIndex(5)
         self.model_dropdown.currentIndexChanged.connect(self.check_fields)
         layout.addWidget(self.model_dropdown)
-
-        # TODO: add language selection (empty for detect language automatically)
 
         # Output directory selection
         self.output_label = QLabel('Select Output Directory:')
@@ -152,22 +150,34 @@ class WhisperTranscriberApp(QWidget):
 
         self.setLayout(layout)
 
-    # TODO: add drag and drop functionality
+    def dragEnterEvent(self, event):
+        if event.mimeData().hasUrls():
+            event.accept()
+        else:
+            event.ignore()
 
-    def openWebPage(self, event):
+    def dropEvent(self, event):
+        files = [u.toLocalFile() for u in event.mimeData().urls()]
+        self.selected_files = files
+        self.output_naming()
+
+    def openWebPage(self):
             QDesktopServices.openUrl(QUrl('https://github.com/openai/whisper?tab=readme-ov-file#available-models-and-languages'))
 
     # TODO: terminate thread, not whole program
     def cancel_transcription(self):
         raise KeyboardInterrupt
 
-    def select_files(self):
+    def file_browser(self):
         self.selected_files, _ = QFileDialog.getOpenFileNames(
             self, 
             'Select Audio File', 
             self.root_dir.parent.as_posix(), 
             f'Audio Files (*{" *".join(self.supported_file_types)});;All Files (*)'
         )
+        self.output_naming()
+
+    def output_naming(self):
         if self.selected_files:
             self.file_path.setText("; ".join(self.selected_files))
 
@@ -200,8 +210,8 @@ class WhisperTranscriberApp(QWidget):
         self.message_box.append(msg)
         QApplication.processEvents()
 
-    def update_progressbar(self, value):
-        self.progress_bar.setValue(value)
+    def update_progressbar(self, val: int):
+        self.progress_bar.setValue(val)
         QApplication.processEvents()
 
     def on_file_finished(self):
