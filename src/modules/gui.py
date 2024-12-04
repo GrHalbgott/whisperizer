@@ -8,64 +8,25 @@ from PyQt6.QtCore import Qt, QUrl
 from PyQt6.QtGui import QPixmap, QDesktopServices
 from PyQt6.QtWidgets import *
 
-from modules.transcriber import Transcriber
+from modules.transcriber_thread import Transcriber
 
 
 class WhisperTranscriberApp(QWidget):
     def __init__(self, ROOT_DIR):
         super().__init__()
-        self.root_dir = ROOT_DIR
-        self.transcriber = Transcriber()
+        self.root_dir = Path(ROOT_DIR)
         self.supported_file_types = ('.wav', '.mp3', '.m4a', '.aac', '.flac', '.ogg', '.wma', '.webm')
-        self.valid_extensions = ('', '.txt', '.md', '.html', '.log', '.xml')
+        self.valid_extensions = ('.txt', '.md', '.html', '.log', '.xml')
         self.initUI()
+        self.transcriber = Transcriber(self.progress_bar, self.show_message)
 
     def initUI(self):
         self.setWindowTitle('Whisperizer')
         self.setMinimumSize(500, 500)
         self.setAcceptDrops(True)
-        self.setStyleSheet("""
-            QWidget {
-                font-family: Arial, sans-serif;
-            }
-            QLabel {
-                font-size: 16px;
-            }
-            QLabel#title {
-                font-size: 20px;
-                font-weight: bold;
-                color: #333;
-            }
-            QLabel#subtitle {
-                font-size: 14px;
-                color: #666;
-            }
-            QLabel#message {
-                font-size: 12px;
-            }
-            QLineEdit, QComboBox {
-                padding: 8px;
-                border: 1px solid #ccc;
-                border-radius: 4px;
-            }
-            QPushButton {
-                padding: 10px;
-                background-color: #007BFF;
-                color: white;
-                border: none;
-                border-radius: 4px;
-            }
-            QPushButton:disabled {
-                background-color: #cccccc;
-                color: #666666;
-            }
-            QPushButton:hover:!disabled {
-                background-color: #0056b3;
-            }
-            QPushButton:pressed:!disabled {
-                background-color: #004494;
-            }
-        """)
+
+        with open(self.root_dir.parent / 'assets' / 'styles.css', 'r') as style_sheet:
+            self.setStyleSheet(style_sheet.read())
 
         layout = QVBoxLayout()
         layout.setContentsMargins(20, 20, 20, 20)
@@ -83,6 +44,7 @@ class WhisperTranscriberApp(QWidget):
         spacer = QSpacerItem(20, 10, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
         layout.addItem(spacer)
 
+        # TODO: multiple selection should be possible - if multiple files are selected, omit naming them in the output file name
         # File selection
         self.file_label = QLabel('Select Audio File:')
         layout.addWidget(self.file_label)
@@ -107,9 +69,9 @@ class WhisperTranscriberApp(QWidget):
         self.model_label = QLabel('Select Whisper Model:')
         model_container_layout.addWidget(self.model_label)
         info_icon = QLabel()
-        icon_path = Path(self.root_dir).parent / 'assets' / 'tooltip.png'
+        icon_path = self.root_dir.parent / 'assets' / 'tooltip.png'
         info_icon.setPixmap(QPixmap(icon_path.as_posix()).scaled(16, 16, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
-        info_icon.setToolTip('Get more information and a list of available models.')
+        info_icon.setToolTip('Click to get more information and a list of available models.')
         info_icon.mousePressEvent = self.openWebPage
         model_container_layout.addWidget(info_icon)
 
@@ -123,6 +85,8 @@ class WhisperTranscriberApp(QWidget):
         self.model_dropdown.setCurrentIndex(5)
         self.model_dropdown.currentIndexChanged.connect(self.check_fields)
         layout.addWidget(self.model_dropdown)
+
+        # TODO: add language selection (empty for detect language automatically)
 
         # Output directory selection
         self.output_label = QLabel('Select Output Directory:')
@@ -139,6 +103,7 @@ class WhisperTranscriberApp(QWidget):
         ### Add static whitespace
         layout.addSpacing(10)
 
+        # TODO: deactivate if multiple input files are chosen
         # Output file name
         self.output_file_label = QLabel('Output File Name:')
         layout.addWidget(self.output_file_label)
@@ -146,19 +111,24 @@ class WhisperTranscriberApp(QWidget):
         self.output_file_name.textChanged.connect(self.check_fields)
         layout.addWidget(self.output_file_name)
 
-        ### Add static whitespace
-        layout.addSpacing(10)
-
-        # Message label
-        self.message_label = QLabel('', objectName='message')
-        self.scroll_area = QScrollArea()
-        self.scroll_area.setWidgetResizable(True)
-        self.scroll_area.setWidget(self.message_label)
-        layout.addWidget(self.scroll_area)
-
         # Add responsive whitespace
         spacer = QSpacerItem(20, 10, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
         layout.addItem(spacer)
+
+        # Message box
+        self.message_box = QTextEdit()
+        self.message_box.setReadOnly(True)
+        # self.message_box = QLabel('', objectName='message')
+        self.scroll_area = QScrollArea()
+        self.scroll_area.setWidgetResizable(True)
+        self.scroll_area.setWidget(self.message_box)
+        self.scroll_area.setMinimumSize(400, 100)
+        layout.addWidget(self.scroll_area)
+
+        # Progress bar
+        self.progress_bar = QProgressBar()
+        self.progress_bar.setRange(0, 100)
+        layout.addWidget(self.progress_bar)
 
         # Transcribe button
         self.transcribe_button = QPushButton('Transcribe')
@@ -167,25 +137,33 @@ class WhisperTranscriberApp(QWidget):
         self.transcribe_button.setToolTip('Please select a file, output directory, and specify an output file name.')
         layout.addWidget(self.transcribe_button)
 
+        # Cancel button
+        self.cancel_button = QPushButton('Cancel')
+        self.cancel_button.clicked.connect(self.cancel_transcription)
+        self.cancel_button.setEnabled(False)
+        layout.addWidget(self.cancel_button)
+
         # Exit button
-        # TODO: either should be clickable when executing to halt the process or add a "Cancel" button
         self.exit_button = QPushButton('Exit')
         self.exit_button.clicked.connect(QApplication.instance().quit)
         layout.addWidget(self.exit_button)
 
         self.setLayout(layout)
 
+    # TODO: add drag and drop functionality
 
     def openWebPage(self, event):
             QDesktopServices.openUrl(QUrl('https://github.com/openai/whisper?tab=readme-ov-file#available-models-and-languages'))
 
+    # TODO: terminate thread, not whole program
+    def cancel_transcription(self):
+        raise KeyboardInterrupt
 
-    # TODO: first path to open should be script path (of main) rather than working directory - try packaged version
     def select_file(self):
         file_path, _ = QFileDialog.getOpenFileName(
             self, 
             'Select Audio File', 
-            '', 
+            self.root_dir.parent.as_posix(), 
             f'Audio Files (*{" *".join(self.supported_file_types)});;All Files (*)'
         )
         if file_path:
@@ -193,12 +171,10 @@ class WhisperTranscriberApp(QWidget):
             default_output_name = Path(file_path).stem
             self.output_file_name.setText(default_output_name)
 
-
     def select_output_dir(self):
-        output_dir = QFileDialog.getExistingDirectory(self, 'Select Output Directory')
+        output_dir = QFileDialog.getExistingDirectory(self, 'Select Output Directory', self.root_dir.parent.as_posix())
         if output_dir:
             self.output_path.setText(output_dir)
-
 
     def check_fields(self):
         if self.file_path.text() and self.output_path.text() and self.output_file_name.text():
@@ -206,34 +182,37 @@ class WhisperTranscriberApp(QWidget):
         else:
             self.transcribe_button.setEnabled(False)
 
-    
-    # TODO: append to this widget rather than overwriting (to be able to see what happened) 
     def show_message(self, msg: str):
-        self.message_label.setText(msg)
+        self.message_box.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
+        self.message_box.append(msg)
         self.scroll_area.verticalScrollBar()
         self.scroll_area.horizontalScrollBar()
         QApplication.processEvents()
     
-
+    # TODO: add progress bar for multiple input files 
     def transcribe(self):
         file_path = Path(self.file_path.text())
         model_name = self.model_dropdown.currentText()
         output_dir = Path(self.output_path.text())
         output_file_name = self.output_file_name.text()
-
-        self.show_message('Transcribing...')
     
-    # TODO: also check if suffix exists in the first place
         output_file_path = Path(output_file_name)
+        if not output_file_path.suffix:
+            output_file_path = output_file_path.with_suffix('.txt')
         if output_file_path.suffix.lower() not in self.valid_extensions:
             output_file_path = output_file_path.with_suffix('.txt')
-            self.show_message('Invalid extension provided. Defaulting to .txt')
+            self.show_message('Invalid extension provided as output file. Defaulting to .txt.')
     
         output_file = output_dir / output_file_path
+
+        # TODO: while transcribing, disable transcribe button and enable cancel button. When finished, turn around
+        self.cancel_button.setEnabled(True)
+        self.transcribe_button.setEnabled(False)
+
+        # TODO: make progressbar if possible (write to console output and show it here) or alternatively animation
+        self.show_message('Transcribing, please wait...')
     
         try:
-            self.transcriber.transcribe(file_path, model_name, output_file)
-            self.show_message(f'Success! Transcription saved to {output_file}')
+            self.transcriber.whisper_transcribe(file_path, model_name, output_file)
         except Exception as e:
-            self.show_message(f'ERROR! An error occurred during execution:\n\n{e}')
-
+            self.show_message(f'ERROR! An error occurred during execution:\n{e}')

@@ -3,17 +3,20 @@
 """Transcription using OpenAI's Whisper model"""
 
 
-import os
 import sys
+import warnings
+from pathlib import Path
 from PyQt6.QtWidgets import QApplication
 
-from modules.ui import WhisperTranscriberApp
+from modules.gui import WhisperTranscriberApp
 
 
-ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
+warnings.filterwarnings('ignore', category=FutureWarning)
+
+ROOT_DIR = Path(__file__).resolve().parent
 
 
-if __name__ == "__main__":
+if __name__ == '__main__':
     app = QApplication(sys.argv)
     ex = WhisperTranscriberApp(ROOT_DIR)
     ex.show()
