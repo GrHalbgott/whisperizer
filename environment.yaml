@@ -1,6 +1,7 @@
-name: whisper
+name: whisperizer
 dependencies:
   - python=3.11.4
   - pip=24.3.1
   - pip:
       - openai-whisper==20240930
+      - pyqt6==6.7.1
