@@ -229,6 +229,7 @@ class WhisperTranscriberApp(QWidget):
     def transcribe_next_file(self):
         if self.current_file_index < len(self.selected_files):
             file_path = self.selected_files[self.current_file_index]
+            self.show_message(f'Reading {Path(file_path).stem}...')
             model_name = self.model_dropdown.currentText()
             output_dir = Path(self.output_path.text())
 
@@ -255,7 +256,7 @@ class WhisperTranscriberApp(QWidget):
         self.cancel_button.setEnabled(True)
         self.transcribe_button.setEnabled(False)
 
-        self.show_message('Transcribing, please wait...')
+        self.show_message('Initiated Whisperizer. Welcome!')
         self.completed_files = 0
         self.current_file_index = 0
 

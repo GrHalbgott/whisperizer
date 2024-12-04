@@ -26,13 +26,14 @@ class TranscriberThread(QThread):
             mel = whisper.log_mel_spectrogram(audio, n_mels=model.dims.n_mels).to(model.device)
             _, probs = model.detect_language(mel)
             self.message_box.emit(f'Detected language: {LANGUAGES[max(probs, key=probs.get)].title()}')
-            options = whisper.DecodingOptions()
-            result = whisper.decode(model, mel, options)
+            self.message_box.emit('Transcribing, please wait...')
+            result = model.transcribe(str(self.file_path))
 
             with open(self.output_file, 'w', encoding='utf-8') as f:
-                text = result.text.replace('.', '.\n')
+                text = result['text'].replace('.', '.\n')
                 f.write(text)
             self.message_box.emit(f'Success! Transcription saved to {self.output_file}')
+
         except Exception as e:
             self.message_box.emit(f'ERROR! An error occurred during execution:\n{e}')
 
