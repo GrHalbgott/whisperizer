@@ -10,10 +10,7 @@ from PyQt6.QtCore import QThread, pyqtSignal
 
 
 class TranscriberThread(QThread):
-    progress = pyqtSignal(int)
     message_box = pyqtSignal(str)
-    finished = pyqtSignal(str)
-    error = pyqtSignal(str)
 
     def __init__(self, file_path, model_name, output_file):
         super().__init__()
@@ -35,31 +32,17 @@ class TranscriberThread(QThread):
             with open(self.output_file, 'w', encoding='utf-8') as f:
                 text = result.text.replace('.', '.\n')
                 f.write(text)
-            self.finished.emit(f'Success! Transcription saved to {self.output_file}')
+            self.message_box.emit(f'Success! Transcription saved to {self.output_file}')
         except Exception as e:
-            self.error.emit(f'ERROR! An error occurred during execution:\n{e}')
+            self.message_box.emit(f'ERROR! An error occurred during execution:\n{e}')
 
 
 class Transcriber:
-    def __init__(self, progress_bar, message_box_callback):
-        self.progress_bar = progress_bar
+    def __init__(self, message_box_callback):
         self.message_box_callback = message_box_callback
         self.thread = None
 
     def whisper_transcribe(self, file_path: Path, model_name: str, output_file: Path):
         self.thread = TranscriberThread(file_path, model_name, output_file)
-        self.thread.progress.connect(self.update_progress)
         self.thread.message_box.connect(self.message_box_callback)
-        self.thread.finished.connect(self.on_finished)
-        self.thread.error.connect(self.on_error)
         self.thread.start()
-
-    def update_progress(self, value):
-        self.progress_bar.setValue(value)
-
-    def on_finished(self, message):
-        self.progress_bar.setValue(100)
-        self.message_box_callback(message)
-
-    def on_error(self, message):
-        self.message_box_callback(message)

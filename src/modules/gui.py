@@ -18,7 +18,7 @@ class WhisperTranscriberApp(QWidget):
         self.supported_file_types = ('.wav', '.mp3', '.m4a', '.aac', '.flac', '.ogg', '.wma', '.webm')
         self.valid_extensions = ('.txt', '.md', '.html', '.log', '.xml')
         self.initUI()
-        self.transcriber = Transcriber(self.progress_bar, self.show_message)
+        self.transcriber = Transcriber(self.show_message)
 
     def initUI(self):
         self.setWindowTitle('Whisperizer')
@@ -44,16 +44,15 @@ class WhisperTranscriberApp(QWidget):
         spacer = QSpacerItem(20, 10, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
         layout.addItem(spacer)
 
-        # TODO: multiple selection should be possible - if multiple files are selected, omit naming them in the output file name
         # File selection
-        self.file_label = QLabel('Select Audio File:')
+        self.file_label = QLabel('Select Audio File(s):')
         layout.addWidget(self.file_label)
         file_layout = QHBoxLayout()
         self.file_path = QLineEdit()
         self.file_path.textChanged.connect(self.check_fields)
         file_layout.addWidget(self.file_path)
         self.file_button = QPushButton('Browse')
-        self.file_button.clicked.connect(self.select_file)
+        self.file_button.clicked.connect(self.select_files)
         file_layout.addWidget(self.file_button)
         layout.addLayout(file_layout)
 
@@ -103,13 +102,14 @@ class WhisperTranscriberApp(QWidget):
         ### Add static whitespace
         layout.addSpacing(10)
 
-        # TODO: deactivate if multiple input files are chosen
         # Output file name
         self.output_file_label = QLabel('Output File Name:')
         layout.addWidget(self.output_file_label)
         self.output_file_name = QLineEdit()
         self.output_file_name.textChanged.connect(self.check_fields)
         layout.addWidget(self.output_file_name)
+        self.output_file_label.setEnabled(False)
+        self.output_file_name.setEnabled(False)
 
         # Add responsive whitespace
         spacer = QSpacerItem(20, 10, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
@@ -118,11 +118,13 @@ class WhisperTranscriberApp(QWidget):
         # Message box
         self.message_box = QTextEdit()
         self.message_box.setReadOnly(True)
-        # self.message_box = QLabel('', objectName='message')
+        self.message_box.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
         self.scroll_area = QScrollArea()
         self.scroll_area.setWidgetResizable(True)
         self.scroll_area.setWidget(self.message_box)
         self.scroll_area.setMinimumSize(400, 100)
+        self.scroll_area.verticalScrollBar()
+        self.scroll_area.horizontalScrollBar()
         layout.addWidget(self.scroll_area)
 
         # Progress bar
@@ -159,60 +161,93 @@ class WhisperTranscriberApp(QWidget):
     def cancel_transcription(self):
         raise KeyboardInterrupt
 
-    def select_file(self):
-        file_path, _ = QFileDialog.getOpenFileName(
+    def select_files(self):
+        self.selected_files, _ = QFileDialog.getOpenFileNames(
             self, 
             'Select Audio File', 
             self.root_dir.parent.as_posix(), 
             f'Audio Files (*{" *".join(self.supported_file_types)});;All Files (*)'
         )
-        if file_path:
-            self.file_path.setText(file_path)
-            default_output_name = Path(file_path).stem
-            self.output_file_name.setText(default_output_name)
+        if self.selected_files:
+            self.file_path.setText("; ".join(self.selected_files))
 
+            if len(self.selected_files) == 1:
+                default_output_name = Path(self.selected_files[0]).stem
+                self.output_file_name.setText(default_output_name)
+                self.output_file_label.setEnabled(True)
+                self.output_file_name.setEnabled(True)
+            else:
+                self.output_file_name.setText('')
+                self.output_file_label.setEnabled(False)
+                self.output_file_name.setEnabled(False)
+        
     def select_output_dir(self):
         output_dir = QFileDialog.getExistingDirectory(self, 'Select Output Directory', self.root_dir.parent.as_posix())
         if output_dir:
             self.output_path.setText(output_dir)
 
     def check_fields(self):
-        if self.file_path.text() and self.output_path.text() and self.output_file_name.text():
-            self.transcribe_button.setEnabled(True)
+        files_selected = bool(self.file_path.text())
+        output_path_set = bool(self.output_path.text())
+        output_file_name_set = bool(self.output_file_name.text())
+    
+        if len(self.selected_files) == 1:
+            self.transcribe_button.setEnabled(files_selected and output_path_set and output_file_name_set)
         else:
-            self.transcribe_button.setEnabled(False)
+            self.transcribe_button.setEnabled(files_selected and output_path_set)
 
     def show_message(self, msg: str):
-        self.message_box.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
         self.message_box.append(msg)
-        self.scroll_area.verticalScrollBar()
-        self.scroll_area.horizontalScrollBar()
         QApplication.processEvents()
-    
-    # TODO: add progress bar for multiple input files 
-    def transcribe(self):
-        file_path = Path(self.file_path.text())
-        model_name = self.model_dropdown.currentText()
-        output_dir = Path(self.output_path.text())
-        output_file_name = self.output_file_name.text()
-    
-        output_file_path = Path(output_file_name)
-        if not output_file_path.suffix:
-            output_file_path = output_file_path.with_suffix('.txt')
-        if output_file_path.suffix.lower() not in self.valid_extensions:
-            output_file_path = output_file_path.with_suffix('.txt')
-            self.show_message('Invalid extension provided as output file. Defaulting to .txt.')
-    
-        output_file = output_dir / output_file_path
 
-        # TODO: while transcribing, disable transcribe button and enable cancel button. When finished, turn around
+    def update_progressbar(self, value):
+        self.progress_bar.setValue(value)
+        QApplication.processEvents()
+
+    def on_file_finished(self):
+        self.completed_files += 1
+        progress = int((self.completed_files / len(self.selected_files)) * 100)
+        self.update_progressbar(progress)
+
+        if self.completed_files < len(self.selected_files):
+            self.transcribe_next_file()
+        else:
+            self.cancel_button.setEnabled(False)
+            self.transcribe_button.setEnabled(True)
+            self.update_progressbar(100)
+
+    def transcribe_next_file(self):
+        if self.current_file_index < len(self.selected_files):
+            file_path = self.selected_files[self.current_file_index]
+            model_name = self.model_dropdown.currentText()
+            output_dir = Path(self.output_path.text())
+
+            if len(self.selected_files) == 1:
+                output_file_name = self.output_file_name.text()
+                output_file_path = Path(output_file_name)
+                if not output_file_path.suffix:
+                    output_file_path = output_file_path.with_suffix('.txt')
+                if output_file_path.suffix.lower() not in self.valid_extensions:
+                    output_file_path = output_file_path.with_suffix('.txt')
+                    self.show_message('Invalid extension provided as output file. Defaulting to .txt.')
+                output_file = output_dir / output_file_path
+            else:
+                output_file = output_dir / Path(file_path).with_suffix('.txt').name
+
+            try:
+                self.transcriber.whisper_transcribe(Path(file_path), model_name, output_file)
+                self.transcriber.thread.finished.connect(self.on_file_finished)
+                self.current_file_index += 1
+            except Exception as e:
+                self.show_message(f'ERROR! An error occurred during execution:\n{e}')
+
+    def transcribe(self):
         self.cancel_button.setEnabled(True)
         self.transcribe_button.setEnabled(False)
 
-        # TODO: make progressbar if possible (write to console output and show it here) or alternatively animation
         self.show_message('Transcribing, please wait...')
-    
-        try:
-            self.transcriber.whisper_transcribe(file_path, model_name, output_file)
-        except Exception as e:
-            self.show_message(f'ERROR! An error occurred during execution:\n{e}')
+        self.completed_files = 0
+        self.current_file_index = 0
+
+        self.update_progressbar(0)
+        self.transcribe_next_file()
