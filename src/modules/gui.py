@@ -7,6 +7,8 @@ from pathlib import Path
 from PyQt6.QtCore import Qt, QUrl
 from PyQt6.QtGui import QPixmap, QDesktopServices
 from PyQt6.QtWidgets import *
+import whisper
+from whisper.tokenizer import LANGUAGES
 
 from modules.transcriber_thread import Transcriber
 
@@ -18,11 +20,12 @@ class WhisperTranscriberApp(QWidget):
         self.supported_file_types = ('.wav', '.mp3', '.m4a', '.aac', '.flac', '.ogg', '.wma', '.webm')
         self.valid_extensions = ('.txt', '.md', '.html', '.log', '.xml')
         self.initUI()
+        self.show_message('Initiated Whisperizer. Welcome!\n')
         self.transcriber = Transcriber(self.show_message)
 
     def initUI(self):
         self.setWindowTitle('Whisperizer')
-        self.setMinimumSize(500, 500)
+        self.setMinimumSize(600, 600)
         self.setAcceptDrops(True)
 
         with open(self.root_dir.parent / 'assets' / 'styles.css', 'r') as style_sheet:
@@ -44,50 +47,79 @@ class WhisperTranscriberApp(QWidget):
         spacer = QSpacerItem(20, 10, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
         layout.addItem(spacer)
 
+        # Create parameters layout
+        params_layout = QVBoxLayout()
+        self.params_layout = params_layout
+
         # File selection
         self.file_label = QLabel('Select Audio File(s):')
-        layout.addWidget(self.file_label)
+        params_layout.addWidget(self.file_label)
         file_layout = QHBoxLayout()
         self.file_path = QLineEdit()
         self.file_path.textChanged.connect(self.check_fields)
         file_layout.addWidget(self.file_path)
         self.file_button = QPushButton('Browse')
         self.file_button.clicked.connect(self.file_browser)
+        self.selected_files = None
         file_layout.addWidget(self.file_button)
-        layout.addLayout(file_layout)
+        params_layout.addLayout(file_layout)
 
         ### Add static whitespace
         layout.addSpacing(10)
         
         # Model selection
         model_layout = QHBoxLayout()
-        model_container = QWidget()
-        model_container_layout = QHBoxLayout()
-        model_container.setLayout(model_container_layout)
-
         self.model_label = QLabel('Select Whisper Model:')
-        model_container_layout.addWidget(self.model_label)
+        model_layout.addWidget(self.model_label)
         info_icon = QLabel()
         icon_path = self.root_dir.parent / 'assets' / 'tooltip.png'
         info_icon.setPixmap(QPixmap(icon_path.as_posix()).scaled(16, 16, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
         info_icon.setToolTip('Click to get more information and a list of available models.')
         info_icon.mousePressEvent = self.openWebPage
-        model_container_layout.addWidget(info_icon)
-
-        model_layout.addWidget(model_container)
+        model_layout.addWidget(info_icon)
         model_layout.addStretch()
-        layout.addLayout(model_layout)
+        params_layout.addLayout(model_layout)
 
-        ## Dropdown model selection
+        # Dropdown model selection
         self.model_dropdown = QComboBox()
-        self.model_dropdown.addItems(['tiny', 'base', 'small', 'medium', 'large', 'turbo'])
-        self.model_dropdown.setCurrentIndex(5)
+        self.model_dropdown.addItems([model.title() for model in whisper.available_models()])
+        self.model_dropdown.setCurrentText('Turbo')
         self.model_dropdown.currentIndexChanged.connect(self.check_fields)
-        layout.addWidget(self.model_dropdown)
+        params_layout.addWidget(self.model_dropdown)
+
+        ### Add static whitespace
+        params_layout.addSpacing(10)
+
+        # Language
+        language_layout = QVBoxLayout()
+        ## Language label
+        self.language_label = QLabel('Language:')
+        language_layout.addWidget(self.language_label)
+        ## Language mode
+        self.language_mode = QCheckBox('Translate the transcription on-the-fly into the specified language?')
+        self.language_mode.setChecked(False)
+        self.language_mode.stateChanged.connect(self.language_mode_toggle)
+        language_layout.addWidget(self.language_mode)
+        ## Language selection
+        self.language_dropdown = QComboBox()
+        self.language_dropdown.addItems(sorted([language.title() for language in LANGUAGES.values()]))
+        self.language_dropdown.currentIndexChanged.connect(self.check_fields)
+        self.language_dropdown.setEnabled(False)
+        language_layout.addWidget(self.language_dropdown)
+        ## Keep original transcription
+        self.language_original = QCheckBox('Keep original transcription in addition to the translation?')
+        self.language_original.setChecked(False)
+        self.language_original.setEnabled(False)
+        language_layout.addWidget(self.language_original)
+        self.language = None
+        params_layout.addLayout(language_layout)
+
+        ### Add static whitespace
+        params_layout.addSpacing(10)
 
         # Output directory selection
         self.output_label = QLabel('Select Output Directory:')
-        layout.addWidget(self.output_label)
+        params_layout.addWidget(self.output_label)
         output_layout = QHBoxLayout()
         self.output_path = QLineEdit()
         self.output_path.textChanged.connect(self.check_fields)
@@ -95,23 +127,27 @@ class WhisperTranscriberApp(QWidget):
         self.output_button = QPushButton('Browse')
         self.output_button.clicked.connect(self.select_output_dir)
         output_layout.addWidget(self.output_button)
-        layout.addLayout(output_layout)
+        params_layout.addLayout(output_layout)
 
         ### Add static whitespace
-        layout.addSpacing(10)
+        params_layout.addSpacing(10)
 
         # Output file name
         self.output_file_label = QLabel('Output File Name:')
-        layout.addWidget(self.output_file_label)
+        self.output_file_label.setToolTip('Provide a name for the output file. If multiple input files are selected, the according file names are used.')
+        params_layout.addWidget(self.output_file_label)
         self.output_file_name = QLineEdit()
         self.output_file_name.textChanged.connect(self.check_fields)
-        layout.addWidget(self.output_file_name)
+        params_layout.addWidget(self.output_file_name)
         self.output_file_label.setEnabled(False)
         self.output_file_name.setEnabled(False)
 
         # Add responsive whitespace
         spacer = QSpacerItem(20, 10, QSizePolicy.Policy.Minimum, QSizePolicy.Policy.Expanding)
-        layout.addItem(spacer)
+        params_layout.addItem(spacer)
+
+        # Add parameters layout to main layout
+        layout.addLayout(params_layout)
 
         # Message box
         self.message_box = QTextEdit()
@@ -134,7 +170,7 @@ class WhisperTranscriberApp(QWidget):
         self.transcribe_button = QPushButton('Transcribe')
         self.transcribe_button.clicked.connect(self.transcribe)
         self.transcribe_button.setEnabled(False)
-        self.transcribe_button.setToolTip('Please select a file, output directory, and specify an output file name.')
+        self.transcribe_button.setToolTip('Please select input file(s) and an output directory.')
         layout.addWidget(self.transcribe_button)
 
         # Cancel button
@@ -161,6 +197,17 @@ class WhisperTranscriberApp(QWidget):
         self.selected_files = files
         self.output_naming()
 
+    def set_layout_enabled(self, layout, enabled):
+        for i in range(layout.count()):
+            item = layout.itemAt(i)
+            widget = item.widget()
+            if widget:
+                widget.setEnabled(enabled)
+            elif item.layout():
+                self.set_layout_enabled(item.layout(), enabled)
+            if enabled:
+                self.language_mode_toggle()
+
     def openWebPage(self):
             QDesktopServices.openUrl(QUrl('https://github.com/openai/whisper?tab=readme-ov-file#available-models-and-languages'))
 
@@ -176,6 +223,14 @@ class WhisperTranscriberApp(QWidget):
             f'Audio Files (*{" *".join(self.supported_file_types)});;All Files (*)'
         )
         self.output_naming()
+
+    def language_mode_toggle(self):
+        if self.language_mode.isChecked():
+            self.language_dropdown.setEnabled(True)
+            self.language_original.setEnabled(True)
+        else:
+            self.language_dropdown.setEnabled(False)
+            self.language_original.setEnabled(False)
 
     def output_naming(self):
         if self.selected_files:
@@ -200,11 +255,12 @@ class WhisperTranscriberApp(QWidget):
         files_selected = bool(self.file_path.text())
         output_path_set = bool(self.output_path.text())
         output_file_name_set = bool(self.output_file_name.text())
-    
-        if len(self.selected_files) == 1:
-            self.transcribe_button.setEnabled(files_selected and output_path_set and output_file_name_set)
-        else:
-            self.transcribe_button.setEnabled(files_selected and output_path_set)
+
+        if self.selected_files:
+            if len(self.selected_files) == 1:
+                self.transcribe_button.setEnabled(files_selected and output_path_set and output_file_name_set)
+            else:
+                self.transcribe_button.setEnabled(files_selected and output_path_set)
 
     def show_message(self, msg: str):
         self.message_box.append(msg)
@@ -222,16 +278,16 @@ class WhisperTranscriberApp(QWidget):
         if self.completed_files < len(self.selected_files):
             self.transcribe_next_file()
         else:
-            self.cancel_button.setEnabled(False)
-            self.transcribe_button.setEnabled(True)
             self.update_progressbar(100)
+            self.show_message('Finished!\n---')
+            self.transcribe_button.setEnabled(True)
+            self.cancel_button.setEnabled(False)
+            self.set_layout_enabled(self.params_layout, True)
 
     def transcribe_next_file(self):
         if self.current_file_index < len(self.selected_files):
             file_path = self.selected_files[self.current_file_index]
             self.show_message(f'Reading {Path(file_path).stem}...')
-            model_name = self.model_dropdown.currentText()
-            output_dir = Path(self.output_path.text())
 
             if len(self.selected_files) == 1:
                 output_file_name = self.output_file_name.text()
@@ -240,13 +296,13 @@ class WhisperTranscriberApp(QWidget):
                     output_file_path = output_file_path.with_suffix('.txt')
                 if output_file_path.suffix.lower() not in self.valid_extensions:
                     output_file_path = output_file_path.with_suffix('.txt')
-                    self.show_message('Invalid extension provided as output file. Defaulting to .txt.')
-                output_file = output_dir / output_file_path
+                    self.show_message('Invalid extension provided for the output file. Defaulting to .txt.')
+                output_file = self.output_dir / output_file_path
             else:
-                output_file = output_dir / Path(file_path).with_suffix('.txt').name
+                output_file = self.output_dir / Path(file_path).with_suffix('.txt').name
 
             try:
-                self.transcriber.whisper_transcribe(Path(file_path), model_name, output_file)
+                self.transcriber.whisper_transcribe(Path(file_path), self.model_name, self.language, output_file, self.mode, self.keep_orig)
                 self.transcriber.thread.finished.connect(self.on_file_finished)
                 self.current_file_index += 1
             except Exception as e:
@@ -255,10 +311,21 @@ class WhisperTranscriberApp(QWidget):
     def transcribe(self):
         self.cancel_button.setEnabled(True)
         self.transcribe_button.setEnabled(False)
+        self.set_layout_enabled(self.params_layout, False)
 
-        self.show_message('Initiated Whisperizer. Welcome!')
         self.completed_files = 0
         self.current_file_index = 0
+
+        self.model_name = self.model_dropdown.currentText().lower()
+        self.output_dir = Path(self.output_path.text())
+        if self.language_mode.isChecked():
+            self.mode = 'translate'
+            self.language = self.language_dropdown.currentText().lower()
+            self.keep_orig = True if self.language_original.isChecked() else False
+        else:
+            self.mode = 'transcribe'
+            self.language = None
+            self.keep_orig = False
 
         self.update_progressbar(0)
         self.transcribe_next_file()
