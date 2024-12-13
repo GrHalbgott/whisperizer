@@ -61,3 +61,4 @@ class Transcriber:
         self.thread = TranscriberThread(file_path, model_name, language, output_file, mode, keep_orig)
         self.thread.message_box.connect(self.message_box_callback)
         self.thread.start()
+        

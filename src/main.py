@@ -21,3 +21,4 @@ if __name__ == '__main__':
     ex = WhisperTranscriberApp(ROOT_DIR)
     ex.show()
     sys.exit(app.exec())
+    

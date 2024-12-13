@@ -5,6 +5,8 @@ outputs/
 .venv
 venv
 *.pkl
+audiofiles/
+transcriptions/
 
 .pytest_cache
 **/lightning_logs
