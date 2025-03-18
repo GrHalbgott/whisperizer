@@ -1,17 +1,19 @@
-# Whisperizer - Transcription tool using OpenAI's Whisper (work in progress)
+# Whisperizer - Transcription tool using OpenAI's Whisper
 
 Transcription is a tedious work, often very time-consuming and prone to errors. OpenAI developed a model to make this work more efficient: [Whisper](https://openai.com/index/whisper/). Using this, you can relax and let your machine do all the work. However, you need some programming skills to actually use the API.
 
 As automated transcription is something with a very broad target audience, I created this Graphical User Interface (GUI)-based tool called Whisperizer, which brings along multiple additions such as translation, model selection, multiple file support, automated file naming and others to the transcription realm.
 
+## What can it do
+
 Note that this work is in progress. The vision is a (Web)App, available either locally or directly online with access to a CUDA-enabled GPU machine, with multiple additions and Quality of Life improvements for an actual easy-to-use, multi-purpose transcription suite.
 
-**So far available**
+### So far available
  - Transcribe single or multiple audiofiles in common formats to textfiles
  - Translate the transcription to a variety of languages
  - A GUI for more accessible transcription and translation services
 
-**Planned (see issues)**
+### Planned (see issues)
 - Diarization (speaker detection)
 - GUI enhancement and bugfixing (Cancel button and progress bar)
 - Improve file management and enable conversion of input files
